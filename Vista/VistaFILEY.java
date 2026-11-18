@@ -1,8 +1,11 @@
 package Vista;
-import Controlador.ConexionBD;
 
+import Controlador.ConexionBD; 
+import Controlador.Read;
 import javax.swing.*;
 import java.awt.*;
+import java.sql.Connection;
+import java.sql.SQLException;
 
 public class VistaFILEY extends JFrame {
 
@@ -47,13 +50,17 @@ public class VistaFILEY extends JFrame {
                 scroll,
                 BorderLayout.CENTER
         );
-
         botonLeer.addActionListener(e -> {
+          
+            try (Connection conexion = ConexionBD.conectar()) {
+                
+        
+                String datos = Read.leerTodo(conexion);
+                areaTexto.setText(datos);
 
-            String datos =
-                    ConexionBD.leerTodo();
-
-            areaTexto.setText(datos);
+            } catch (SQLException ex) {
+                areaTexto.setText("Error al conectar con la base de datos:\n" + ex.getMessage());
+            }
         });
 
         add(panelPrincipal);
