@@ -23,4 +23,9 @@ public class Editorial {
     public String getCorreo() {
         return correo;
     }
+
+    @Override
+    public String toString() {
+        return id + " - " + nombre.trim();
+    }
 }

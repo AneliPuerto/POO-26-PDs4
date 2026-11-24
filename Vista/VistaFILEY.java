@@ -1,68 +1,40 @@
 package Vista;
 
-import Controlador.ConexionBD; 
 import Controlador.Read;
-import javax.swing.*;
-import java.awt.*;
-import java.sql.Connection;
-import java.sql.SQLException;
 
+import javax.swing.*;
+
+/** Ventana principal: una pestaña por entidad (CRUD) y una de consultas. */
 public class VistaFILEY extends JFrame {
 
-    private JTextArea areaTexto;
-    private JButton botonLeer;
-
     public VistaFILEY() {
+        Read controlador= new Read();
 
         setTitle("Sistema Administrativo FILEY");
-        setSize(900, 600);
+        setSize(1000, 680);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        JPanel panelPrincipal =
-                new JPanel(new BorderLayout());
+        JTabbedPane pestanas = new JTabbedPane();
+        pestanas.addTab("Stands", new PanelStands(controlador));
+        pestanas.addTab("Editoriales", new PanelEditoriales(controlador));
+        pestanas.addTab("Reservaciones", new PanelReservaciones(controlador));
+        pestanas.addTab("Consultas", new PanelConsultas(controlador));
 
-        botonLeer =
-                new JButton("Leer información de H2");
+        // Cada vez que se cambia de pestaña se vuelve a leer la BD (así se ven los cambios de las demás)
+        pestanas.addChangeListener(e -> refrescarPestanaActual(pestanas));
 
-        areaTexto =
-                new JTextArea();
+        add(pestanas);
+        refrescarPestanaActual(pestanas);
+    }
 
-        areaTexto.setEditable(false);
-
-        areaTexto.setFont(
-                new Font(
-                        "Monospaced",
-                        Font.PLAIN,
-                        13
-                )
-        );
-
-        JScrollPane scroll =
-                new JScrollPane(areaTexto);
-
-        panelPrincipal.add(
-                botonLeer,
-                BorderLayout.NORTH
-        );
-
-        panelPrincipal.add(
-                scroll,
-                BorderLayout.CENTER
-        );
-        botonLeer.addActionListener(e -> {
-          
-            try (Connection conexion = ConexionBD.conectar()) {
-                
-        
-                String datos = Read.leerTodo(conexion);
-                areaTexto.setText(datos);
-
-            } catch (SQLException ex) {
-                areaTexto.setText("Error al conectar con la base de datos:\n" + ex.getMessage());
+    private void refrescarPestanaActual(JTabbedPane pestanas) {
+        java.awt.Component actual = pestanas.getSelectedComponent();
+        if (actual instanceof Refrescable) {
+            ((Refrescable) actual).refrescar();
+            if (actual instanceof PanelCrud) {
+                ((PanelCrud) actual).nuevo();
             }
-        });
-
-        add(panelPrincipal);
+        }
     }
 }

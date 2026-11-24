@@ -2,6 +2,8 @@ package Datos;
 
 public class Stand {
 
+    public static final String[] ESTADOS = {"DISPONIBLE", "RESERVADO", "OCUPADO", "BLOQUEADO"};
+
     private String id;
     private double m2;
     private double precio;
@@ -28,5 +30,10 @@ public class Stand {
 
     public String getEstado() {
         return estado;
+    }
+
+    @Override
+    public String toString() {
+        return id;
     }
 }

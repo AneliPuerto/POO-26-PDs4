@@ -1,172 +1,188 @@
 package Controlador;
 
-import java.sql.Statement;
+import Datos.Editorial;
+import Datos.Reservacion;
+import Datos.Stand;
+import Excepciones.ConexionException;
+import Excepciones.FileyException;
+import Excepciones.ReglaNegocioException;
+import Operaciones.EditorialOperaciones;
+import Operaciones.ReservacionOperaciones;
+import Operaciones.StandOperaciones;
+
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.List;
 
-public class Read {
 
-    public static void inicializarBD(Connection conexion) {
-        String sqlStand =
-                "CREATE TABLE IF NOT EXISTS stand (" +
-                "id VARCHAR(20) PRIMARY KEY, " +
-                "m2 DOUBLE, " +
-                "precio DOUBLE, " +
-                "estado VARCHAR(30))";
+public class Read{
 
-        String sqlEditorial =
-                "CREATE TABLE IF NOT EXISTS editorial (" +
-                "id VARCHAR(20) PRIMARY KEY, " +
-                "nombre VARCHAR(100), " +
-                "correo VARCHAR(100))";
+    /** Trabajo que devuelve un resultado (lecturas). */
+    private interface Consulta<T> {
+        T ejecutar(Connection conexion) throws FileyException;
+    }
 
-        String sqlReservacion =
-                "CREATE TABLE IF NOT EXISTS reservaciones (" +
-                "id VARCHAR(20) PRIMARY KEY, " +
-                "stand_id VARCHAR(20), " +
-                "editorial_id VARCHAR(20), " +
-                "fecha_reserva DATE, " +
-                "fecha_vigencia DATE, " +
-                "activa BOOLEAN, " +
-                "FOREIGN KEY (stand_id) REFERENCES stand(id), " +
-                "FOREIGN KEY (editorial_id) REFERENCES editorial(id))";
+    /** Trabajo que no devuelve nada (crear, actualizar, eliminar). */
+    private interface Modificacion {
+        void ejecutar(Connection conexion) throws FileyException;
+    }
 
-        try (Statement statement = conexion.createStatement()) {
-            statement.execute(sqlStand);
-            statement.execute(sqlEditorial);
-            statement.execute(sqlReservacion);
-            System.out.println("Estado: tablas creadas o verificadas exitosamente (H2)");
-        } catch (SQLException e) {
-            System.out.println("Error al crear las tablas: " + e.getMessage());
+    //  STANDS //
+    public List<Stand> listarStands() throws FileyException {
+        return consultar(c -> new StandOperaciones(c).leerTodos());
+    }
+
+    public List<String[]> listarStandsConEditorial() throws FileyException {
+        return consultar(c -> new StandOperaciones(c).leerConEditorial());
+    }
+
+    public void crearStand(String id, String m2, String precio, String estado) throws FileyException {
+        Stand stand = construirStand(id, m2, precio, estado);
+        modificar(c -> new StandOperaciones(c).crear(stand));
+    }
+
+    public void actualizarStand(String id, String m2, String precio, String estado) throws FileyException {
+        Stand stand = construirStand(id, m2, precio, estado);
+        modificar(c -> new StandOperaciones(c).actualizar(stand));
+    }
+
+    public void eliminarStand(String id) throws FileyException {
+        String idLimpio = textoObligatorio(id, "El ID del stand");
+        modificar(c -> new StandOperaciones(c).eliminar(idLimpio));
+    }
+
+    //  EDITORIALES  //
+    public List<Editorial> listarEditoriales() throws FileyException {
+        return consultar(c -> new EditorialOperaciones(c).leerTodas());
+    }
+
+    public List<String[]> listarEditorialesConStands() throws FileyException {
+        return consultar(c -> new EditorialOperaciones(c).leerConStands());
+    }
+
+    public String siguienteIdEditorial() throws FileyException {
+        return consultar(c -> new EditorialOperaciones(c).siguienteId());
+    }
+
+    public void crearEditorial(String id, String nombre, String correo) throws FileyException {
+        Editorial editorial = construirEditorial(id, nombre, correo);
+        modificar(c -> new EditorialOperaciones(c).crear(editorial));
+    }
+
+    public void actualizarEditorial(String id, String nombre, String correo) throws FileyException {
+        Editorial editorial = construirEditorial(id, nombre, correo);
+        modificar(c -> new EditorialOperaciones(c).actualizar(editorial));
+    }
+
+    public void eliminarEditorial(String id) throws FileyException {
+        String idLimpio = textoObligatorio(id, "El ID de la editorial");
+        modificar(c -> new EditorialOperaciones(c).eliminar(idLimpio));
+    }
+
+    //  RESERVACIONES //
+    public List<Reservacion> listarReservaciones() throws FileyException {
+        return consultar(c -> new ReservacionOperaciones(c).leerTodas());
+    }
+
+    public String siguienteIdReservacion() throws FileyException {
+        return consultar(c -> new ReservacionOperaciones(c).siguienteId());
+    }
+
+    public void crearReservacion(String id, String standId, String editorialId,
+                                 String fechaReserva, String fechaVigencia, boolean activa) throws FileyException {
+        Reservacion r = construirReservacion(id, standId, editorialId, fechaReserva, fechaVigencia, activa);
+        modificar(c -> new ReservacionOperaciones(c).crear(r));
+    }
+
+    public void actualizarReservacion(String id, String standId, String editorialId,
+                                      String fechaReserva, String fechaVigencia, boolean activa) throws FileyException {
+        Reservacion r = construirReservacion(id, standId, editorialId, fechaReserva, fechaVigencia, activa);
+        modificar(c -> new ReservacionOperaciones(c).actualizar(r));
+    }
+
+    public void eliminarReservacion(String id) throws FileyException {
+        String idLimpio = textoObligatorio(id, "El ID de la reservación");
+        modificar(c -> new ReservacionOperaciones(c).eliminar(idLimpio));
+    }
+
+    // conexión  //
+    private <T> T consultar(Consulta<T> consulta) throws FileyException {
+        try (Connection conexion = ConexionBD.conectar()) {
+            return consulta.ejecutar(conexion);
+        } catch (SQLException e) { // solo puede venir de close()
+            throw new ConexionException("Error al cerrar la conexión: " + e.getMessage(), e);
         }
     }
 
-    public static String leerStands(Connection conexion) {
-        StringBuilder resultado = new StringBuilder();
-        String sql = "SELECT * FROM stand";
+    private void modificar(Modificacion modificacion) throws FileyException {
+        consultar(conexion -> {
+            modificacion.ejecutar(conexion);
+            return null;
+        });
+    }
+//validación y construcción de objetos  //
+    private Stand construirStand(String id, String m2, String precio, String estado) throws FileyException {
+        String idLimpio = textoObligatorio(id, "El ID del stand");
+        double metros = numeroPositivo(m2, "Los m²");
+        double costo = numeroPositivo(precio, "El precio");
+        String estadoLimpio = textoObligatorio(estado, "El estado");
+        if (!Arrays.asList(Stand.ESTADOS).contains(estadoLimpio)) {
+            throw new ReglaNegocioException("Estado inválido: " + estadoLimpio + ".");
+        }
+        return new Stand(idLimpio, metros, costo, estadoLimpio);
+    }
 
-        try (
-            Statement statement = conexion.createStatement();
-            ResultSet resultSet = statement.executeQuery(sql)
-        ) {
-            resultado.append("\n--- STANDS ---\n");
-            resultado.append(String.format("%-8s %-8s %-15s %-15s%n", "ID", "M2", "PRECIO", "ESTADO"));
+    private Editorial construirEditorial(String id, String nombre, String correo) throws FileyException {
+        String idLimpio = textoObligatorio(id, "El ID de la editorial");
+        String nombreLimpio = textoObligatorio(nombre, "El nombre");
+        String correoLimpio = textoObligatorio(correo, "El correo");
+        if (!correoLimpio.contains("@")) {
+            throw new ReglaNegocioException("El correo debe contener '@'.");
+        }
+        return new Editorial(idLimpio, nombreLimpio, correoLimpio);
+    }
 
-            while (resultSet.next()) {
-                String id = resultSet.getString("id");
-                double m2 = resultSet.getDouble("m2");
-                double precio = resultSet.getDouble("precio");
-                String estado = resultSet.getString("estado");
+    private Reservacion construirReservacion(String id, String standId, String editorialId,
+                                             String fechaReserva, String fechaVigencia, boolean activa)
+            throws FileyException {
+        return new Reservacion(
+                textoObligatorio(id, "El ID de la reservación"),
+                textoObligatorio(standId, "El stand"),
+                textoObligatorio(editorialId, "La editorial"),
+                fecha(fechaReserva, "La fecha de reserva"),
+                fecha(fechaVigencia, "La fecha de vigencia"),
+                activa);
+    }
 
-                resultado.append(String.format("%-8s %-8.1f $%-14.2f %-15s%n", id, m2, precio, estado));
+    private String textoObligatorio(String valor, String campo) throws ReglaNegocioException {
+        if (valor == null || valor.trim().isEmpty()) {
+            throw new ReglaNegocioException(campo + " es obligatorio.");
+        }
+        return valor.trim();
+    }
+
+    private double numeroPositivo(String valor, String campo) throws ReglaNegocioException {
+        String texto = textoObligatorio(valor, campo);
+        try {
+            double numero = Double.parseDouble(texto.replace(',', '.'));
+            if (numero <= 0 || Double.isNaN(numero) || Double.isInfinite(numero)) {
+                throw new ReglaNegocioException(campo + " debe ser mayor que cero.");
             }
-        } catch (SQLException e) {
-            resultado.append("Error al leer stands: ").append(e.getMessage()).append("\n");
+            return numero;
+        } catch (NumberFormatException e) {
+            throw new ReglaNegocioException(campo + " debe ser un número (ej. 12.5).", e);
         }
-
-        return resultado.toString();
     }
 
-    public static String leerEditoriales(Connection conexion) {
-        StringBuilder resultado = new StringBuilder();
-        String sql = "SELECT * FROM editorial";
-
-        try (
-            Statement statement = conexion.createStatement();
-            ResultSet resultSet = statement.executeQuery(sql)
-        ) {
-            resultado.append("\n--- EDITORIALES ---\n");
-            resultado.append(String.format("%-8s %-30s %-35s%n", "ID", "NOMBRE", "CORREO"));
-
-            while (resultSet.next()) {
-                String id = resultSet.getString("id");
-                String nombre = resultSet.getString("nombre");
-                String correo = resultSet.getString("correo");
-
-                resultado.append(String.format("%-8s %-30s %-35s%n", id, nombre, correo));
-            }
-        } catch (SQLException e) {
-            resultado.append("Error al leer editoriales: ").append(e.getMessage()).append("\n");
-        }
-
-        return resultado.toString();
-    }
-
-    public static String leerReservaciones(Connection conexion) {
-        StringBuilder resultado = new StringBuilder();
-        String sql = "SELECT * FROM reservaciones";
-
-        try (
-            Statement statement = conexion.createStatement();
-            ResultSet resultSet = statement.executeQuery(sql)
-        ) {
-            resultado.append("\n--- RESERVACIONES ---\n");
-            resultado.append(String.format("%-8s %-12s %-15s %-18s %-18s %-10s%n", 
-                    "ID", "STAND_ID", "EDITORIAL_ID", "FECHA_RESERVA", "FECHA_VIGENCIA", "ACTIVA"));
-
-            while (resultSet.next()) {
-                String id = resultSet.getString("id");
-                String standId = resultSet.getString("stand_id");
-                String editorialId = resultSet.getString("editorial_id");
-                String fechaReserva = resultSet.getDate("fecha_reserva").toString();
-                String fechaVigencia = resultSet.getDate("fecha_vigencia").toString();
-                boolean activa = resultSet.getBoolean("activa");
-
-                resultado.append(String.format("%-8s %-12s %-15s %-18s %-18s %-10s%n", 
-                        id, standId, editorialId, fechaReserva, fechaVigencia, activa));
-            }
-        } catch (SQLException e) {
-            resultado.append("Error al leer reservaciones: ").append(e.getMessage()).append("\n");
-        }
-
-        return resultado.toString();
-    }
-
-    public static String leerTodo(Connection conexion) {
-        StringBuilder resultado = new StringBuilder();
-        resultado.append(leerStands(conexion));
-        resultado.append(leerEditoriales(conexion));
-        resultado.append(leerReservaciones(conexion));
-        return resultado.toString();
-    }
-
-    public static void insertarDatosIniciales(Connection conexion) {
-        String sqlStand =
-                "INSERT INTO stand (id, m2, precio, estado) VALUES " +
-                "('A-01', 9.0, 13500.00, 'OCUPADO')," +
-                "('A-02', 9.0, 13500.00, 'RESERVADO')," +
-                "('A-03', 12.0, 18000.00, 'RESERVADO')," +
-                "('A-04', 12.0, 18000.00, 'DISPONIBLE')," +
-                "('B-01', 18.0, 27000.00, 'OCUPADO')," +
-                "('B-02', 18.0, 27000.00, 'RESERVADO')," +
-                "('B-03', 24.0, 36000.00, 'BLOQUEADO')," +
-                "('B-04', 36.0, 54000.00, 'RESERVADO')";
-
-        String sqlEditorial =
-                "INSERT INTO editorial (id, nombre, correo) VALUES " +
-                "('E-1', 'Editorial Dante', 'contacto@dante.example')," +
-                "('E-2', 'Editorial Universidad ', 'Universidad@Uady.example')," +
-                "('E-3', 'Editorial Kamite', 'info@Kamite.example')," +
-                "('E-4', 'Editorial El Estudiante', 'El@estudiante.example')";
-
-        String sqlReservaciones =
-                "INSERT INTO reservaciones " +
-                "(id, stand_id, editorial_id, fecha_reserva, fecha_vigencia, activa) VALUES " +
-                "('R-1', 'A-01', 'E-1', '2026-10-31', '2026-11-15', TRUE)," +
-                "('R-2', 'A-02', 'E-2', '2026-11-02', '2026-11-17', TRUE)," +
-                "('R-3', 'B-01', 'E-3', '2026-11-05', '2026-11-20', TRUE)," +
-                "('R-4', 'A-03', 'E-1', '2026-11-11', '2026-11-26', TRUE)," +
-                "('R-5', 'B-02', 'E-2', '2026-11-14', '2026-11-29', TRUE)," +
-                "('R-6', 'B-04', 'E-4', '2026-11-14', '2026-11-29', TRUE)";
-
-        try (Statement statement = conexion.createStatement()) {
-            statement.executeUpdate(sqlStand);
-            statement.executeUpdate(sqlEditorial);
-            statement.executeUpdate(sqlReservaciones);
-            System.out.println("Datos iniciales insertados.");
-        } catch (SQLException e) {
-            System.out.println("Los datos ya existen o hubo un error: " + e.getMessage());
+    private LocalDate fecha(String valor, String campo) throws ReglaNegocioException {
+        String texto = textoObligatorio(valor, campo);
+        try {
+            return LocalDate.parse(texto);
+        } catch (DateTimeParseException e) {
+            throw new ReglaNegocioException(campo + " debe tener el formato AAAA-MM-DD (ej. 2026-11-30).", e);
         }
     }
 }
